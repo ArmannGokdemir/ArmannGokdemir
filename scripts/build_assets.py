@@ -138,7 +138,7 @@ MOTION_OFF ="@media (prefers-reduced-motion: reduce) { .m { animation: none !imp
 # The glasses slide down to look at the viewer on an irregular schedule.
 # One long cycle with uneven gaps reads as random; CSS has no real randomness.
 PEEK_CYCLE = 100  # seconds, so keyframe percentages below are also seconds
-PEEKS = [(3.0, 4.6), (13.0, 15.8), (21.5, 22.6), (40.0, 43.4), (47.0, 48.0), (49.2, 50.6), (66.0, 68.4), (83.5, 84.6), (91.0, 93.6)]
+PEEKS = [(3.0, 4.6), (13.0, 15.8), (18.2, 21.6), (40.0, 43.4), (47.0, 48.0), (49.2, 50.6), (66.0, 68.4), (83.5, 84.6), (91.0, 93.6)]
 BLINKS = [14.6, 41.8, 67.2, 92.4]
 
 
@@ -164,6 +164,125 @@ def blink_frames():
     return " ".join(frames)
 
 
+# The ring text is a train of letters moving along one closed route: a few
+# turns around the badge, then a stroll around the name card and back.
+RING_TEXT = "BUILD IT • SHIP IT • NEW IDEA • "
+RING_SIZE = 30
+RING_R = 112
+TURNS = 2  # full turns around the badge between strolls
+STROLLS = [18.0, 66.0]  # seconds into PEEK_CYCLE; each lines up with a peek
+STROLL_TIME = 13.0
+
+
+def bezier_length(points, samples=400):
+    def at(u):
+        n = len(points) - 1
+        x = y = 0.0
+        for k, (px, py) in enumerate(points):
+            c = math.comb(n, k) * (1 - u) ** (n - k) * u**k
+            x, y = x + c * px, y + c * py
+        return x, y
+
+    total, prev = 0.0, at(0)
+    for s in range(1, samples + 1):
+        cur = at(s / samples)
+        total += math.dist(prev, cur)
+        prev = cur
+    return total
+
+
+class Route:
+    """Path data plus its running length, so letters can be timed by distance."""
+
+    def __init__(self, x, y):
+        self.d, self.pos, self.length = [f"M{num(x)} {num(y)}"], (x, y), 0.0
+
+    def half_turn(self, r, to):
+        self.d.append(f"A{r} {r} 0 0 1 {num(to[0])} {num(to[1])}")
+        self.length += math.pi * r
+        self.pos = to
+
+    def line(self, to):
+        self.d.append(f"L{num(to[0])} {num(to[1])}")
+        self.length += math.dist(self.pos, to)
+        self.pos = to
+
+    def curve(self, *points):
+        letter = "Q" if len(points) == 2 else "C"
+        self.d.append(letter + " ".join(f"{num(x)} {num(y)}" for x, y in points))
+        self.length += bezier_length([self.pos, *points])
+        self.pos = points[-1]
+
+    def stroll(self, top):
+        # Leave the badge at the bottom heading left, run clockwise round the
+        # name card through the margins, and come back in at the top.
+        self.curve((1000, self.pos[1]), (962, 414), (900, 414))
+        self.line((70, 414))
+        self.curve((28, 414), (28, 372))
+        self.line((28, 72))
+        self.curve((28, 30), (70, 30))
+        self.line((880, 30))
+        self.curve((960, 30), (990, top[1]), top)
+
+
+def ring_route(cx, cy, r):
+    bottom, top = (cx, cy + r), (cx, cy - r)
+    route, marks = Route(*bottom), []
+    for _ in range(2):  # the loop is drawn twice so offsets never wrap
+        for _ in STROLLS:
+            for _ in range(TURNS):
+                route.half_turn(r, top)
+                route.half_turn(r, bottom)
+            start = route.length
+            route.stroll(top)
+            marks.append((start, route.length))
+            route.half_turn(r, bottom)
+    return "".join(route.d), route.length / 2, marks[: len(STROLLS)]
+
+
+def ring_train(t, cx, cy):
+    """Letters of RING_TEXT, each riding the route at its own offset."""
+    circumference = 2 * math.pi * RING_R
+    route_d, loop, marks = ring_route(cx, cy, RING_R)
+
+    _, glyphs, width = t.shape(RING_TEXT, RING_SIZE, wght=800, opsz=24)
+    tracking = (circumference - width) / len(glyphs)
+    font, glyphs, _ = t.shape(RING_TEXT, RING_SIZE, wght=800, opsz=24, tracking=tracking)
+    scale = RING_SIZE / t.upem
+
+    # Distance of the text's first letter along the route over one cycle.
+    # Slow while circling, eased and fast while strolling.
+    start = 0.3 * circumference
+    times, distances = [0.0], [start]
+    for at, (leave, back) in zip(STROLLS, marks):
+        times += [at, at + STROLL_TIME]
+        distances += [leave - circumference, back]
+    times.append(float(PEEK_CYCLE))
+    distances.append(start + loop)
+    key_times = ";".join(f"{v / PEEK_CYCLE:.4f}" for v in times)
+    splines = ";".join(".42 0 .58 1" if k % 2 else "0 0 1 1" for k in range(len(times) - 1))
+
+    letters = []
+    typed = 0
+    for gid, gx, advance in glyphs:
+        pen = SVGPathPen(None, ntos=num)
+        font.draw_glyph_with_pen(gid, TransformPen(pen, (scale, 0, 0, -scale, -advance / 2, 0)))
+        shape = pen.getCommands()
+        if not shape:
+            continue
+        offset = gx + advance / 2
+        points = ";".join(f"{(d + offset) / (2 * loop):.5f}" for d in distances)
+        letters.append(
+            f'<g><animateMotion dur="{PEEK_CYCLE}s" repeatCount="indefinite" rotate="auto" calcMode="spline" '
+            f'keyTimes="{key_times}" keyPoints="{points}" keySplines="{splines}"><mpath xlink:href="#ring-route"/></animateMotion>'
+            f'<g class="m type" style="animation-delay:{0.6 + typed * 0.08:.2f}s"><path d="{shape}" fill="{INK}"/></g></g>'
+        )
+        typed += 1
+
+    static_d = t.circle_path(RING_TEXT, RING_SIZE, RING_R, start_deg=90 + math.degrees(start / RING_R), wght=800, opsz=24)
+    return route_d, "\n".join(letters), static_d, tracking
+
+
 def build_banner(t):
     W, H = 1280, 440
     card_x, card_y, card_w, card_h = 56, 48, 770, 340
@@ -185,25 +304,27 @@ def build_banner(t):
         squiggle += f"q{seg / 2} {-9 if i % 2 == 0 else 9} {seg} 0"
 
     badge_cx, badge_cy, badge_r = 1062, 214, 148
-    ring_d = t.circle_path("BUILD IT • SHIP IT • BUILD IT • SH— OOH, NEW IDEA! • ", 24, 112, wght=800, opsz=24)
+    route_d, ring_letters, ring_static_d, _ = ring_train(t, badge_cx, badge_cy)
 
     dots = halftone(W, H, 14, falloff(1180, 400, 560, 5.2))
     dots_tl = halftone(W, H, 14, falloff(0, 0, 230, 4.2))
 
     fez_dx, fez_dy = apex_x + 4, apex_y + 6
 
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-labelledby="title desc">
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-labelledby="title desc">
 <title id="title">Selam, I'm Arman.</title>
 <desc id="desc">I build stuff. Apps, AI agents, dashboards, automations: whatever the problem needs.</desc>
 <style>
 .m {{ transform-box: view-box; transform-origin: 0 0; }}
 .swing {{ animation: swing 2.6s ease-in-out infinite alternate; }}
-.spin {{ animation: spin 28s linear infinite; }}
+.type {{ animation: type .3s cubic-bezier(.3,1.6,.6,1) backwards; }}
+@keyframes type {{ from {{ opacity: 0; transform: scale(.2); }} to {{ opacity: 1; transform: scale(1); }} }}
+.ring-static {{ display: none; }}
+@media (prefers-reduced-motion: reduce) {{ .ring-static {{ display: inline; }} .ring-live {{ display: none; }} }}
 .glint {{ animation: glint 4.5s ease-in-out infinite; }}
 .twinkle {{ animation: twinkle 2.4s ease-in-out infinite; }}
 .draw {{ stroke-dasharray: 900; animation: draw 1.6s cubic-bezier(.65,0,.35,1) .3s backwards; }}
 @keyframes swing {{ from {{ transform: rotate(-18deg); }} to {{ transform: rotate(6deg); }} }}
-@keyframes spin {{ to {{ transform: rotate(360deg); }} }}
 @keyframes glint {{ 0%, 55% {{ transform: translateX(-120px); }} 80%, 100% {{ transform: translateX(140px); }} }}
 @keyframes twinkle {{ 0%, 100% {{ transform: scale(1) rotate(0deg); }} 50% {{ transform: scale(.55) rotate(45deg); }} }}
 @keyframes draw {{ from {{ stroke-dashoffset: 900; }} to {{ stroke-dashoffset: 0; }} }}
@@ -224,6 +345,7 @@ def build_banner(t):
   <pattern id="dots-dense" width="4" height="4" patternUnits="userSpaceOnUse">
     <rect width="4" height="4" fill="{WHITE}"/><circle cx="2" cy="2" r="1.35" fill="{INK}"/>
   </pattern>
+  <path id="ring-route" d="{route_d}"/>
   <clipPath id="lenses"><path d="M-80 -22h70v30q0 14 -14 14h-42q-14 0 -14 -14zM10 -22h70v30q0 14 -14 14h-42q-14 0 -14 -14z"/></clipPath>
 </defs>
 <g clip-path="url(#frame)">
@@ -244,7 +366,7 @@ def build_banner(t):
   <g transform="translate({badge_cx} {badge_cy})">
     <circle r="{badge_r}" fill="{INK}" transform="translate(10 10)"/>
     <circle r="{badge_r}" fill="{WHITE}" stroke="{INK}" stroke-width="5"/>
-    <g class="m spin"><path d="{ring_d}" fill="{INK}"/></g>
+    <path class="ring-static" d="{ring_static_d}" fill="{INK}"/>
     <circle r="96" fill="{BLUE}" stroke="{INK}" stroke-width="4.5"/>
     <!-- eyes sit behind the lenses and show when the glasses slide down -->
     <g transform="translate(-45 0)"><g class="m blink">
@@ -297,8 +419,13 @@ def build_banner(t):
   <!-- sparkles -->
   <g transform="translate(884 70)"><path class="m twinkle" d="{sparkle(16)}" fill="{WHITE}" stroke="{INK}" stroke-width="3" stroke-linejoin="round"/></g>
   <g transform="translate(1240 172)"><path class="m twinkle" style="animation-delay:-.8s" d="{sparkle(20)}" fill="{WHITE}" stroke="{INK}" stroke-width="3" stroke-linejoin="round"/></g>
-  <g transform="translate(906 404)"><path class="m twinkle" style="animation-delay:-1.6s" d="{sparkle(12)}" fill="{WHITE}" stroke="{INK}" stroke-width="3" stroke-linejoin="round"/></g>
+  <g transform="translate(870 372)"><path class="m twinkle" style="animation-delay:-1.6s" d="{sparkle(12)}" fill="{WHITE}" stroke="{INK}" stroke-width="3" stroke-linejoin="round"/></g>
   <g transform="translate(1226 404)"><path class="m twinkle" style="animation-delay:-1.1s" d="{sparkle(9)}" fill="{WHITE}" stroke="{INK}" stroke-width="2.5" stroke-linejoin="round"/></g>
+
+  <!-- ring text: typed in, circles the badge, now and then strolls round the card -->
+  <g class="ring-live">
+{ring_letters}
+  </g>
 </g>
 </svg>
 """
