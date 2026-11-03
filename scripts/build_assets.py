@@ -135,6 +135,34 @@ FEZ_BODY = "M-34 0C-35 -28 -33 -56 -29 -78Q0 -86 29 -78C33 -56 35 -28 34 0Q0 9 -
 
 MOTION_OFF ="@media (prefers-reduced-motion: reduce) { .m { animation: none !important; } }"
 
+# The glasses slide down to look at the viewer on an irregular schedule.
+# One long cycle with uneven gaps reads as random; CSS has no real randomness.
+PEEK_CYCLE = 100  # seconds, so keyframe percentages below are also seconds
+PEEKS = [(3.0, 4.6), (13.0, 15.8), (21.5, 22.6), (40.0, 43.4), (47.0, 48.0), (49.2, 50.6), (66.0, 68.4), (83.5, 84.6), (91.0, 93.6)]
+BLINKS = [14.6, 41.8, 67.2, 92.4]
+
+
+def pct(v):
+    return f"{v:.2f}".rstrip("0").rstrip(".") + "%"
+
+
+def schedule(rest, active, spans, ramp=0.4):
+    frames = [f"0% {{ transform: {rest}; }}"]
+    for start, end in spans:
+        frames.append(
+            f"{pct(start)} {{ transform: {rest}; }} {pct(start + ramp)}, {pct(end)} {{ transform: {active}; }} {pct(end + ramp)} {{ transform: {rest}; }}"
+        )
+    frames.append(f"100% {{ transform: {rest}; }}")
+    return " ".join(frames)
+
+
+def blink_frames():
+    frames = ["0% { transform: scaleY(1); }"]
+    for at in BLINKS:
+        frames.append(f"{pct(at)} {{ transform: scaleY(1); }} {pct(at + 0.12)} {{ transform: scaleY(.1); }} {pct(at + 0.24)} {{ transform: scaleY(1); }}")
+    frames.append("100% { transform: scaleY(1); }")
+    return " ".join(frames)
+
 
 def build_banner(t):
     W, H = 1280, 440
@@ -157,7 +185,7 @@ def build_banner(t):
         squiggle += f"q{seg / 2} {-9 if i % 2 == 0 else 9} {seg} 0"
 
     badge_cx, badge_cy, badge_r = 1062, 214, 148
-    ring_d = t.circle_path("FEZ ON • SHIP IT • FEZ ON • SHIP IT • ", 24, 112, wght=800, opsz=24)
+    ring_d = t.circle_path("BUILD IT • SHIP IT • BUILD IT • SH— OOH, NEW IDEA! • ", 24, 112, wght=800, opsz=24)
 
     dots = halftone(W, H, 14, falloff(1180, 400, 560, 5.2))
     dots_tl = halftone(W, H, 14, falloff(0, 0, 230, 4.2))
@@ -179,6 +207,12 @@ def build_banner(t):
 @keyframes glint {{ 0%, 55% {{ transform: translateX(-120px); }} 80%, 100% {{ transform: translateX(140px); }} }}
 @keyframes twinkle {{ 0%, 100% {{ transform: scale(1) rotate(0deg); }} 50% {{ transform: scale(.55) rotate(45deg); }} }}
 @keyframes draw {{ from {{ stroke-dashoffset: 900; }} to {{ stroke-dashoffset: 0; }} }}
+.peek {{ animation: peek {PEEK_CYCLE}s ease-in-out infinite; }}
+.brow {{ animation: brow {PEEK_CYCLE}s ease-in-out infinite; }}
+.blink {{ animation: blink {PEEK_CYCLE}s linear infinite; }}
+@keyframes peek {{ {schedule("translateY(0)", "translateY(18px)", PEEKS)} }}
+@keyframes brow {{ {schedule("translateY(0) rotate(0deg)", "translateY(-8px) rotate(-6deg)", PEEKS)} }}
+@keyframes blink {{ {blink_frames()} }}
 {MOTION_OFF}
 </style>
 <defs>
@@ -212,14 +246,27 @@ def build_banner(t):
     <circle r="{badge_r}" fill="{WHITE}" stroke="{INK}" stroke-width="5"/>
     <g class="m spin"><path d="{ring_d}" fill="{INK}"/></g>
     <circle r="96" fill="{BLUE}" stroke="{INK}" stroke-width="4.5"/>
-    <g transform="translate(0 8)">
+    <!-- eyes sit behind the lenses and show when the glasses slide down -->
+    <g transform="translate(-45 0)"><g class="m blink">
+      <ellipse rx="15" ry="11" fill="{WHITE}" stroke="{INK}" stroke-width="3.5"/>
+      <circle r="5.5" fill="{INK}"/><circle cx="-1.8" cy="-2" r="1.6" fill="{WHITE}"/>
+    </g></g>
+    <g transform="translate(45 0)"><g class="m blink">
+      <ellipse rx="15" ry="11" fill="{WHITE}" stroke="{INK}" stroke-width="3.5"/>
+      <circle r="5.5" fill="{INK}"/><circle cx="-1.8" cy="-2" r="1.6" fill="{WHITE}"/>
+    </g></g>
+    <path d="M-70 -28Q-48 -40 -24 -31" fill="none" stroke="{INK}" stroke-width="8" stroke-linecap="round"/>
+    <g transform="translate(47 -32)"><g class="m brow">
+      <path d="M-23 1Q1 -8 23 4" fill="none" stroke="{INK}" stroke-width="8" stroke-linecap="round"/>
+    </g></g>
+    <g transform="translate(0 8)"><g class="m peek">
       <path d="M-80 -22h70v30q0 14 -14 14h-42q-14 0 -14 -14zM10 -22h70v30q0 14 -14 14h-42q-14 0 -14 -14z" fill="{INK}"/>
       <path d="M-12 -16h24" stroke="{INK}" stroke-width="7" stroke-linecap="round"/>
       <path d="M-80 -18l-10 -6M80 -18l10 -6" stroke="{INK}" stroke-width="6" stroke-linecap="round"/>
       <g clip-path="url(#lenses)">
         <g class="m glint"><path d="M-20 -40h14l-30 80h-14zM2 -40h6l-30 80h-6z" fill="{WHITE}" opacity=".9"/></g>
       </g>
-    </g>
+    </g></g>
   </g>
 
   <!-- card -->
