@@ -270,7 +270,6 @@ STACK = [
     ("Azure", "#0078d4"),
     ("Power Platform", "#742774"),
     ("Copilot Studio", "#0e9f8f"),
-    ("Claude Code", "#d97757"),
 ]
 PER_ROW = 4
 
