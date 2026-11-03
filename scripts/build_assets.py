@@ -258,69 +258,12 @@ def build_banner(t):
     (ASSETS / "banner.svg").write_text(svg)
 
 
-STACK = [
-    ("Swift", "#f05138"),
-    ("SwiftUI", "#0a84ff"),
-    ("TypeScript", "#3178c6"),
-    ("React", "#58c4dc"),
-    ("Next.js", INK),
-    ("Tailwind CSS", "#38bdf8"),
-    ("Python", "#ffd43b"),
-    ("C# / .NET", "#512bd4"),
-    ("Azure", "#0078d4"),
-    ("Power Platform", "#742774"),
-    ("Copilot Studio", "#0e9f8f"),
-]
-PER_ROW = 4
-
-
-def build_stack(t):
-    W, H = 1280, 258
-    size, height, gap = 26, 54, 22
-    rows = [STACK[i : i + PER_ROW] for i in range(0, len(STACK), PER_ROW)]
-    tilts = [-3, 2, -1.5, 2.5, -2, 1.5, -2.5, 2, -1, 3, -2, 1.5]
-    stickers, i = [], 0
-    for row_index, row in enumerate(rows):
-        widths = [t.shape(label, size, wght=700, opsz=24)[2] + 74 for label, _ in row]
-        x = (W - sum(widths) - gap * (len(row) - 1)) / 2
-        cy = 46 + row_index * 82
-        for (label, color), w in zip(row, widths):
-            text_d, _ = t.path(label, size, 50, 9, wght=700, opsz=24)
-            stickers.append(
-                f"""<g transform="translate({num(x)} {num(cy)}) rotate({tilts[i]} {num(w / 2)} 0)">
-  <g class="m bob" style="animation-delay:{-0.37 * i:.2f}s">
-    <rect x="0" y="{-height / 2}" width="{num(w)}" height="{height}" rx="{height / 2}" fill="{BLUE}" transform="translate(5 5)"/>
-    <rect x="0" y="{-height / 2}" width="{num(w)}" height="{height}" rx="{height / 2}" fill="{WHITE}" stroke="{INK}" stroke-width="3.5"/>
-    <circle cx="30" cy="0" r="9" fill="{color}" stroke="{INK}" stroke-width="2.5"/>
-    <path d="{text_d}" fill="{INK}"/>
-  </g>
-</g>"""
-            )
-            x += w + gap
-            i += 1
-
-    labels = ", ".join(label for label, _ in STACK)
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-labelledby="title">
-<title id="title">{labels.replace("&", "&amp;")}</title>
-<style>
-.m {{ transform-box: view-box; transform-origin: 0 0; }}
-.bob {{ animation: bob 3.2s ease-in-out infinite; }}
-@keyframes bob {{ 0%, 100% {{ transform: translateY(0); }} 50% {{ transform: translateY(-5px); }} }}
-{MOTION_OFF}
-</style>
-{chr(10).join(stickers)}
-</svg>
-"""
-    (ASSETS / "stack.svg").write_text(svg)
-
-
 def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     t = Type(sys.argv[1])
     ASSETS.mkdir(exist_ok=True)
     build_banner(t)
-    build_stack(t)
 
 
 if __name__ == "__main__":
