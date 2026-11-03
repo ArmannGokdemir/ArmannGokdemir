@@ -305,12 +305,139 @@ def build_banner(t):
     (ASSETS / "banner.svg").write_text(svg)
 
 
+YELLOW = "#ffd23f"
+
+# (idea, how far it got before the next idea showed up, in percent)
+IDEAS = [
+    ("A to-do app, but this time it’s different", 64),
+    ("An AI agent that writes my standup", 88),
+    ("A smart fridge that judges my snacks", 41),
+    ("Rewrite everything in Rust", 12),
+    ("A menu bar app for my menu bar apps", 93),
+    ("Uber, but for çay", 57),
+    ("Finish the last idea", 3),
+]
+FIRST_IDEA_NUMBER = 212
+SLOT = 5.0  # seconds each idea gets before it is abandoned
+
+
+def lightbulb():
+    return (
+        f'<path d="M0 -17a13 13 0 0 1 8 23v5h-16v-5a13 13 0 0 1 8 -23z" fill="{WHITE}" stroke="{INK}" stroke-width="3.5" stroke-linejoin="round"/>'
+        f'<path d="M-6 15h12M-4 20h8" stroke="{INK}" stroke-width="3.5" stroke-linecap="round"/>'
+        f'<path d="M0 -25v-6M18 -16l5 -4M-18 -16l-5 -4" stroke="{INK}" stroke-width="3" stroke-linecap="round"/>'
+    )
+
+
+def build_ticker(t):
+    W, H = 1280, 240
+    card_x, card_y, card_w, card_h = 24, 18, 1218, 194
+    left = card_x + 40
+    bar_x, bar_y, bar_w, bar_h = left, 156, 880, 28
+    name_size, name_y = 46, 130
+    cycle = SLOT * len(IDEAS)
+
+    def at(seconds):
+        return pct(seconds / cycle * 100)
+
+    def at_slot(seconds):
+        return pct(seconds / SLOT * 100)
+
+    pill_text_d, pill_text_w = t.path("NOW BUILDING", 17, left + 36, 64, wght=800, opsz=24)
+    pill_w = pill_text_w + 54
+    sticker_d, sticker_w = t.path("OOH, NEW IDEA!", 26, 0, 0, wght=800, opsz=24)
+
+    styles, ideas = [], []
+    for i, (idea, progress) in enumerate(IDEAS):
+        delay = f"animation-delay:{num(i * SLOT)}s"
+        name_d, name_w = t.path(idea, name_size, left, name_y, wght=800, opsz=48)
+        number_d, _ = t.path(f"IDEA #{FIRST_IDEA_NUMBER + i}", 17, left + pill_w + 18, 64, wght=700, opsz=24)
+        verdict_d, _ = t.path(f"{progress}% · abandoned", 22, bar_x + bar_w + 22, bar_y + 21, wght=700, opsz=24)
+
+        strike_y = name_y - name_size * 0.3
+        strike = f"M{num(left - 8)} {num(strike_y + 3)}"
+        steps = max(2, int((name_w + 16) // 38))
+        step_w = (name_w + 16) / steps
+        for k in range(steps):
+            strike += f"q{num(step_w / 2)} {-7 if k % 2 == 0 else 7} {num(step_w)} {-1 if k % 2 == 0 else 1}"
+
+        # A white cover slides right to reveal the striped fill, so the stripes never stretch.
+        filled = bar_w * progress / 100
+        styles.append(
+            f"@keyframes fill-{i} {{ 0%, {at(0.5)} {{ transform: translateX(0); }} {at(1.3)} {{ transform: translateX({num(filled * 0.35)}px); }} "
+            f"{at(1.8)} {{ transform: translateX({num(filled * 0.38)}px); }} {at(2.6)} {{ transform: translateX({num(filled * 0.86)}px); }} "
+            f"{at(3.0)}, 100% {{ transform: translateX({num(filled)}px); }} }}"
+        )
+        later = "" if i == 0 else " later"
+        ideas.append(
+            f"""<g class="m idea{later}" style="{delay}">
+  <path d="{number_d}" fill="{INK_SOFT}"/>
+  <path d="{name_d}" fill="{INK}"/>
+  <path class="m strike" style="{delay}" d="{strike}" fill="none" stroke="{INK}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate({bar_x} {bar_y})" clip-path="url(#bar)">
+    <rect width="{bar_w}" height="{bar_h}" fill="url(#stripes)"/>
+    <g class="m" style="animation: fill-{i} {num(cycle)}s ease-in-out infinite backwards; {delay}" transform="translate({num(filled)} 0)">
+      <rect width="{bar_w}" height="{bar_h}" fill="{WHITE}"/><path d="M0 0V{bar_h}" stroke="{INK}" stroke-width="4"/>
+    </g>
+  </g>
+  <path class="m verdict" style="{delay}" d="{verdict_d}" fill="{INK}"/>
+</g>"""
+        )
+
+    titles = "; ".join(f"{idea} ({progress}%)" for idea, progress in IDEAS)
+    sticker_x, sticker_y = card_x + card_w - 150, 58
+    sticker_box_w = sticker_w + 86
+
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-labelledby="title desc">
+<title id="title">Now building, then abandoning for a new idea</title>
+<desc id="desc">{titles}</desc>
+<style>
+.m {{ transform-box: view-box; transform-origin: 0 0; }}
+.idea {{ animation: idea {num(cycle)}s ease-out infinite backwards; }}
+.strike {{ stroke-dasharray: 1400; animation: strike {num(cycle)}s ease-in-out infinite backwards; }}
+.verdict {{ animation: verdict {num(cycle)}s linear infinite backwards; }}
+.pop {{ animation: pop {num(SLOT)}s ease-out infinite; }}
+.live {{ animation: live 1.1s steps(1) infinite; }}
+@keyframes idea {{ 0% {{ opacity: 0; transform: translateY(14px); }} {at(0.35)}, {at(SLOT - 0.4)} {{ opacity: 1; transform: translateY(0); }} {at(SLOT - 0.05)}, 100% {{ opacity: 0; transform: translateY(0); }} }}
+@keyframes strike {{ 0%, {at(3.0)} {{ stroke-dashoffset: 1400; }} {at(3.35)}, 100% {{ stroke-dashoffset: 0; }} }}
+@keyframes verdict {{ 0%, {at(3.15)} {{ opacity: 0; }} {at(3.35)}, 100% {{ opacity: 1; }} }}
+@keyframes pop {{ 0%, {at_slot(3.25)} {{ opacity: 0; transform: scale(0); }} {at_slot(3.45)} {{ opacity: 1; transform: scale(1.25); }} {at_slot(3.6)}, {at_slot(4.55)} {{ opacity: 1; transform: scale(1); }} {at_slot(4.85)}, 100% {{ opacity: 0; transform: scale(.9); }} }}
+@keyframes live {{ 50% {{ opacity: .15; }} }}
+{chr(10).join(styles)}
+@media (prefers-reduced-motion: reduce) {{ .m {{ animation: none !important; }} .later {{ display: none; }} }}
+</style>
+<defs>
+  <pattern id="stripes" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <rect width="18" height="18" fill="{BLUE}"/><rect width="7" height="18" fill="{BLUE_DEEP}"/>
+  </pattern>
+  <clipPath id="bar"><rect width="{bar_w}" height="{bar_h}" rx="{bar_h / 2}"/></clipPath>
+</defs>
+<rect x="{card_x + 10}" y="{card_y + 10}" width="{card_w}" height="{card_h}" rx="22" fill="{BLUE}"/>
+<rect x="{card_x}" y="{card_y}" width="{card_w}" height="{card_h}" rx="22" fill="{WHITE}" stroke="{INK}" stroke-width="5"/>
+<rect x="{left}" y="44" width="{num(pill_w)}" height="30" rx="15" fill="{INK}"/>
+<circle class="m live" cx="{left + 19}" cy="59" r="6" fill="{BLUE}"/>
+<path d="{pill_text_d}" fill="{WHITE}"/>
+<rect x="{bar_x}" y="{bar_y}" width="{bar_w}" height="{bar_h}" rx="{bar_h / 2}" fill="{WHITE}"/>
+{chr(10).join(ideas)}
+<rect x="{bar_x}" y="{bar_y}" width="{bar_w}" height="{bar_h}" rx="{bar_h / 2}" fill="none" stroke="{INK}" stroke-width="4"/>
+<g transform="translate({sticker_x} {sticker_y}) rotate(-7)"><g class="m pop">
+  <rect x="{num(-sticker_box_w / 2 + 6)}" y="-26" width="{num(sticker_box_w)}" height="58" rx="14" fill="{INK}"/>
+  <rect x="{num(-sticker_box_w / 2)}" y="-32" width="{num(sticker_box_w)}" height="58" rx="14" fill="{YELLOW}" stroke="{INK}" stroke-width="4"/>
+  <g transform="translate({num(-sticker_box_w / 2 + 34)} -4)">{lightbulb()}</g>
+  <path d="{sticker_d}" fill="{INK}" transform="translate({num(-sticker_box_w / 2 + 64)} 6)"/>
+</g></g>
+</svg>
+"""
+    (ASSETS / "ticker.svg").write_text(svg)
+
+
 def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     t = Type(sys.argv[1])
     ASSETS.mkdir(exist_ok=True)
     build_banner(t)
+    build_ticker(t)
 
 
 if __name__ == "__main__":
